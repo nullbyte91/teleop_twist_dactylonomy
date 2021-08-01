@@ -28,6 +28,7 @@ class FingerCounter:
     def findHand(self, img, draw=True):
         imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         self.results = self.mpHands.process(imgRGB)
+
         if self.results.multi_hand_landmarks:
             for handLms in self.results.multi_hand_landmarks:
                 if draw:
@@ -47,17 +48,6 @@ class FingerCounter:
                     cv2.circle(img, (cx, cy), 1, (0, 0, 0), cv2.FILLED)
         return lmList
 
-
-class Teleop:
-    def __init__(self, args):
-        self.height = 480
-        self.width = 640
-        self.cap = cv2.VideoCapture(args.input)
-        self.cap.set(3, self.width)
-        self.cap.set(4, self.height)
-        self.publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=5)
-        self.fingerCounter = FingerCounter()
-    
     def drawImg(self, img,totalFingers):
         img = cv2.line(img, (10, 10), (160, 10), (0, 0, 0), 2)
         img = cv2.line(img, (10, 40), (160, 40), (0, 0, 0), 2)
@@ -103,6 +93,49 @@ class Teleop:
         
         return img
 
+class Teleop:
+    def __init__(self, args):
+        self.height = 480
+        self.width = 640
+        self.cap = cv2.VideoCapture(args.input)
+        self.cap.set(3, self.width)
+        self.cap.set(4, self.height)
+        self.publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=5)
+        self.fingerCounter = FingerCounter()
+        self.moveBindings = {'1':[1,0],
+                             '2':[-1,0],
+                             '3':[0,1],
+                             '4':[0,-1],
+                             '5':[0,0]}
+                             
+    def publishTwish(self, action):
+        speed = 0.2
+        turn = 0.2
+        x = 0
+        th = 0 
+        if action == 1:
+            x = self.moveBindings['1'][0]
+            th = self.moveBindings['1'][1]
+        elif action == 2:
+            x = self.moveBindings['2'][0]
+            th = self.moveBindings['2'][1]
+        elif action == 3:
+            x = self.moveBindings['3'][0]
+            th = self.moveBindings['3'][1]
+        elif action == 4:
+            x = self.moveBindings['4'][0]
+            th = self.moveBindings['4'][0]
+        elif action == 5:
+            x = self.moveBindings['5'][0]
+            th = self.moveBindings['5'][1]
+        target_speed = speed * x
+        target_turn = turn * th
+
+        twist = Twist()
+        twist.linear.x = target_speed; twist.linear.y = 0; twist.linear.z = 0
+        twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = target_turn
+        self.publisher.publish(twist)
+
     def grapFrame(self):
         pTime = 0
         while True:
@@ -133,8 +166,9 @@ class Teleop:
                         fingers.append(0)
 
                 totalFingers = fingers.count(1)
-                img = self.drawImg(img, totalFingers)
-                
+                img = self.fingerCounter.drawImg(img, totalFingers)
+                self.publishTwish(totalFingers)
+
             cTime = time.time()
             fps = 1 / (cTime - pTime)
             pTime = cTime
@@ -145,8 +179,10 @@ class Teleop:
             cv2.imshow("Image", img)
             cv2.waitKey(1)
 
+
 def main():
     args = build_argparser().parse_args()
+    rospy.init_node('teleop')
     teleop = Teleop(args)
     teleop.grapFrame()
 
